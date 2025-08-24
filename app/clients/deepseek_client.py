@@ -3,6 +3,7 @@
 import os
 import json
 from typing import AsyncGenerator
+import aiohttp
 
 from app.utils.logger import logger
 
@@ -25,7 +26,9 @@ class DeepSeekClient(BaseClient):
             proxy: 代理服务器地址
             system_config: 系统配置，包含 save_deepseek_tokens 等设置
         """
-        super().__init__(api_key, api_url, proxy=proxy)
+        # 为 DeepSeek 客户端设置更长的超时时间，特别支持深度思考模型
+        extended_timeout = aiohttp.ClientTimeout(total=1800, connect=10, sock_read=1700)
+        super().__init__(api_key, api_url, timeout=extended_timeout, proxy=proxy)
         self.system_config = system_config or {}
 
     def _process_think_tag_content(self, content: str) -> tuple[bool, str]:
