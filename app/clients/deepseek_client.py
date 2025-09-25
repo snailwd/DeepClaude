@@ -96,8 +96,12 @@ class DeepSeekClient(BaseClient):
         # 检查系统配置中的 save_deepseek_tokens 设置
         save_deepseek_tokens = self.system_config.get("save_deepseek_tokens", False)
         max_tokens_limit = self.system_config.get("save_deepseek_tokens_max_tokens", 5)
-        
+
         logger.info(f"DeepSeek 客户端配置 - save_deepseek_tokens: {save_deepseek_tokens}, max_tokens_limit: {max_tokens_limit}")
+
+        # 如果模型包含 deepseek-v3.1-terminus，启用 thinking 模式
+        if "terminus" in model.lower():
+            data["enable_thinking"] = True
 
         # 只在支持原生推理且开启了节省 tokens 功能时才添加 max_tokens 参数
         if is_origin_reasoning and save_deepseek_tokens:

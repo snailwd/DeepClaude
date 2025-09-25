@@ -50,7 +50,7 @@ class BaseClient(ABC):
             timeout: 当前请求的超时设置,None则使用实例默认值
 
         Yields:
-            bytes: 原始响应数据
+            bytes: 完整的SSE事件行数据
 
         Raises:
             aiohttp.ClientError: 客户端错误
@@ -62,7 +62,7 @@ class BaseClient(ABC):
         try:
             # 使用 connector 参数来优化连接池
             connector = aiohttp.TCPConnector(limit=100, force_close=True)
-            
+
             # 处理代理地址格式
             proxy_url = None
             if self.proxy:
@@ -72,12 +72,12 @@ class BaseClient(ABC):
                 else:
                     proxy_url = self.proxy
                 logger.info(f"使用代理: {proxy_url}")
-            
+
             async with aiohttp.ClientSession(connector=connector) as session:
                 async with session.post(
-                    self.api_url, 
-                    headers=headers, 
-                    json=data, 
+                    self.api_url,
+                    headers=headers,
+                    json=data,
                     timeout=request_timeout,
                     proxy=proxy_url
                 ) as response:
@@ -88,10 +88,36 @@ class BaseClient(ABC):
                         logger.error(error_msg)
                         raise ClientError(error_msg)
 
-                    # 流式读取响应内容
-                    async for chunk in response.content.iter_any():
-                        if chunk:  # 过滤空chunks
-                            yield chunk
+                    # 使用行缓冲机制处理SSE流
+                    buffer = b""
+
+                    # 使用 iter_chunked 获取更稳定的数据块，每次读取 1024 字节
+                    async for chunk in response.content.iter_chunked(1024):
+                        if not chunk:
+                            continue
+
+                        buffer += chunk
+
+                        # 查找完整的行
+                        while b'\n' in buffer:
+                            line_end = buffer.index(b'\n')
+                            line = buffer[:line_end]
+                            buffer = buffer[line_end + 1:]
+
+                            # 处理可能的 \r\n 行结束符
+                            if line.endswith(b'\r'):
+                                line = line[:-1]
+
+                            # 只返回包含 "data: " 的完整SSE事件行
+                            if line.startswith(b'data: '):
+                                yield line + b'\n'
+                            elif line == b'':
+                                # 空行表示SSE事件的结束
+                                yield b'\n'
+
+                    # 处理缓冲区中剩余的数据
+                    if buffer and buffer.startswith(b'data: '):
+                        yield buffer
 
         except ServerTimeoutError as e:
             error_msg = f"请求超时: {str(e)}"
